@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 4000;
 
 // Middleware
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "https://robot-kiosque-web.vercel.app/",
+  origin: [process.env.FRONTEND_URL, "https://robot-kiosque-web.vercel.app"],
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
@@ -33,6 +33,10 @@ mongoose.connect(MONGO_URI)
         console.log("Connected to MongoDB Lakehouse");
         app.listen(PORT, () => {
             console.log(`Express Server running on http://localhost:${PORT}`);
+            
+            // Start the keep-alive service
+            const initKeepAlive = require('./services/keepAliveService');
+            initKeepAlive();
         });
     })
     .catch(err => {
