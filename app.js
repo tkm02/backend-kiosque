@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 4000;
 
 // Middleware
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "*",
+  origin: process.env.FRONTEND_URL || "https://robot-kiosque-web.vercel.app/",
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
