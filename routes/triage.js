@@ -33,8 +33,52 @@ router.post("/evaluate", async (req, res) => {
     // 2. Get XGBoost Prediction (via child_process)
     console.log("🚀 [AI-Engine] Lancement XGBoost...");
     const xgbStart = Date.now();
-    const xgbResult = await PredictionService.getXGPrediction(xgbInput);
-    console.log(`⏱️ [AI-Engine] XGBoost terminé en ${Date.now() - xgbStart}ms`);
+    let xgbResult;
+    try {
+      xgbResult = await PredictionService.getXGPrediction(xgbInput);
+      console.log(`⏱️ [AI-Engine] XGBoost terminé en ${Date.now() - xgbStart}ms`);
+    } catch (modelError) {
+      console.error("⚠️ [AI-Engine] XGBoost Error:", modelError.message);
+      xgbResult = null;
+    }
+
+    // Fallback: Rule-based risk calculation if XGBoost fails
+    if (!xgbResult || xgbResult.error || !xgbResult.risk_level || xgbResult.confidence === undefined || isNaN(xgbResult.confidence)) {
+      console.log("⚠️ [Fallback] Utilisation du calcul de risque basé sur les règles");
+      
+      // Simple rule-based risk calculation
+      let riskScore = 0;
+      
+      // Temperature-based risk
+      if (data.temperature_c >= 40) riskScore += 40;
+      else if (data.temperature_c >= 38.5) riskScore += 25;
+      else if (data.temperature_c >= 37.5) riskScore += 10;
+      
+      // SpO2-based risk
+      if (data.spo2_pct < 90) riskScore += 30;
+      else if (data.spo2_pct < 95) riskScore += 15;
+      
+      // Symptom-based risk
+      if (data.fievre) riskScore += 10;
+      if (data.nausees_vomissements) riskScore += 5;
+      if (data.fatigue) riskScore += 5;
+      if (data.convulsions) riskScore += 20;
+      if (data.troubles_conscience) riskScore += 25;
+      
+      // Age-based vulnerability
+      if (data.age_years < 5 || data.age_years > 65) riskScore += 10;
+      
+      // Determine risk level
+      let fallbackRiskLevel = "low";
+      if (riskScore >= 50) fallbackRiskLevel = "high";
+      else if (riskScore >= 25) fallbackRiskLevel = "medium";
+      
+      xgbResult = {
+        risk_level: fallbackRiskLevel,
+        confidence: Math.min(riskScore / 100, 0.95),
+        fallback: true
+      };
+    }
 
     // 3. Challenge with Perplexity AI
     console.log("🤖 [LLM-Expert] Challenge avec Perplexity...");
@@ -78,17 +122,19 @@ router.post("/evaluate", async (req, res) => {
 
     // 6. Map risk level and calculate logical severity score (0-100%)
     const riskMap = { "low": "Faible", "medium": "Modéré", "high": "Élevé" };
-    const displayRisk = riskMap[xgbResult.risk_level] || xgbResult.risk_level;
+    const displayRisk = riskMap[xgbResult.risk_level] || "Indéterminé";
 
     // Calculate a "Severity Score" that matches the label (not just model confidence)
     let displayScore = 0;
-    const conf = xgbResult.confidence;
+    const conf = xgbResult.confidence || 0.5;
     if (xgbResult.risk_level === "low") {
       displayScore = Math.round(conf * 33);
     } else if (xgbResult.risk_level === "medium") {
       displayScore = Math.round(34 + (conf * 32));
-    } else {
+    } else if (xgbResult.risk_level === "high") {
       displayScore = Math.round(67 + (conf * 33));
+    } else {
+      displayScore = 50; // Default if unknown
     }
 
     // 7. Response to Frontend
